@@ -1,0 +1,45 @@
+# path to the checkpoint file containing the model
+model_path: checkpoints/3dunet_tvfl1_3dseres_c1b/best_checkpoint.pytorch
+# model configuration
+model:
+  # model class
+  name: SEResUNet3D
+  # number of input channels to the model
+  in_channels: 3
+  # number of output channels
+  out_channels: 2
+  # determines the order of operators in a single layer (crg - Conv3d+ReLU+GroupNorm)
+  conv_layer_order: clg
+  # feature maps scale factor
+  encode_channels: [32,64,96,128]
+  groups:          [8,8,8,8]
+  strides:         [1,2,1,1]
+  use_SE:          [false,true,true,true]
+  SE_reduction:    [4,8,8,8]
+  use_deconv:      true
+  
+  # apply element-wise nn.Sigmoid after the final 1x1 convolution, otherwise apply nn.Softmax
+  final_sigmoid: false
+  # basic module
+  basic_module: SEResNetBlock
+  
+  
+# specify the test datasets
+datasets:
+  # patch size given to the network (adapt to fit in your GPU mem)
+  patch: [64, 160, 160]
+  # stride between patches (make sure the the patches overlap in order to get smoother prediction maps)
+  stride: [16, 32, 32]
+  # path to the raw data within the H5
+  raw_internal_path: raw
+  # how many subprocesses to use for data loading
+  num_workers: 8
+  # paths to the datasets
+  test_path:
+    -  'resources/ct01m_c1.h5'
+  transformer:
+    test:
+      raw:
+        - name: Normalize
+        - name: ToTensor
+          expand_dims: false

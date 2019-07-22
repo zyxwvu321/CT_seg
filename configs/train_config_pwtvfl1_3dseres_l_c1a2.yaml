@@ -1,0 +1,177 @@
+# use a fixed random seed to guarantee that when you run the code twice you will get the same outcome
+manual_seed: 0
+# model configuration
+model:
+  # model class
+  name: SEResUNet3D
+  # number of input channels to the model
+  in_channels: 3
+  # number of output channels
+  out_channels: 1
+  # determines the order of operators in a single layer (crg - Conv3d+ReLU+GroupNorm)
+  conv_layer_order: clg
+  # feature maps scale factor
+  encode_channels: [32,64,96,128]
+  groups:          [8,8,8,8]
+  strides:         [1,2,1,1]
+  use_SE:          [false,true,true,true]
+  SE_reduction:    [4,8,8,8]
+  use_deconv:      true
+  
+  # apply element-wise nn.Sigmoid after the final 1x1 convolution, otherwise apply nn.Softmax
+  final_sigmoid: true
+  # basic module
+  basic_module: SEResNetBlock
+# trainer configuration
+trainer:
+  # path to the checkpoint directory
+  checkpoint_dir: 3dunet_pwtvfl1_3dseres_c1a2
+  # path to latest checkpoint; if provided the training will be resumed from that checkpoint
+  resume: null
+  # how many iterations between validations
+  validate_after_iters: 100
+  # how many iterations between tensorboard logging
+  log_after_iters: 50
+  # max number of epochs
+  epochs: 150
+  # max number of iterations
+  iters: 1000000
+  # model with higher eval score is considered better
+  eval_score_higher_is_better: True
+# optimizer configuration
+optimizer:
+  name: SGD
+  momentum: 0.9
+  # initial learning rate
+  learning_rate: 0.0005
+  # weight decay
+  weight_decay: 0.0001
+# loss function configuration
+
+  
+  
+multi_loss: 
+   # loss function to be used during training
+  loss1:
+      name: TverskyLoss
+      # A manual rescaling weight given to each class.
+      loss_weight: null
+      # a target value that is ignored and does not contribute to the input gradient
+      ignore_index: null
+      
+      epsilon: 1.0
+      sigmoid_normalization:   true
+      skip_first_target:       false
+      use_log:                 false
+      alpha:                   0.5
+      beta:                    0.5
+      loss_gain:               1.0
+  loss2: 
+      # loss function to be used during training
+      name: FocalLoss1
+      # A manual rescaling weight given to each class.
+      loss_weight: null
+      # a target value that is ignored and does not contribute to the input gradient
+      ignore_index: null
+      
+      
+      gamma:  2.0 
+      alpha:  0.75
+      sigmoid_normalization: true
+      loss_gain:  20.0
+      skip_first_target: false    
+  
+  
+# evaluation metric configuration
+eval_metric:
+  name: MeanIoU
+  # a target label that is ignored during metric evaluation
+  ignore_index: null
+  sigmoid_normalization: true
+  
+lr_scheduler:
+  name: CyclicLR
+  base_lr:  0.1*config['optimizer']['learning_rate']
+  max_lr:  config['optimizer']['learning_rate']
+  step_size_up: config['n_iter_loader'] *config['trainer']['epochs']*3//10
+  step_size_down: config['n_iter_loader'] *config['trainer']['epochs']*7//10
+  mode:        'triangular'
+  scale_mode:  'cycle'
+  cycle_momentum:  true
+  base_momentum:  0.9
+  max_momentum: 0.95
+  last_epoch: -1
+# data loaders configuration
+loaders:
+  # train patch size given to the network (adapt to fit in your GPU mem, generally the bigger patch the better)
+  train_patch: [64, 160, 160]
+  # train stride between patches (make sure that the training patches overlap)
+  train_stride: [32, 64, 64]
+  # validation patch (can be bigger than train patch since there is no backprop)
+  val_patch: [64, 160, 160]
+  # validation stride (validation patches doesn't need to overlap)
+  val_stride: [32, 80, 80]
+  # path to the raw data within the H5
+  raw_internal_path: raw
+  # path to the the label data withtin the H5
+  label_internal_path: label  
+   # path to the the weight data withtin the H5
+  weight_internal_path: weight
+  # path to the the weight data withtin the H5
+  train_path:
+    - 'resources/ct01m_c1.h5'
+  # paths to the validation datasets
+  val_path:
+    - 'resources/ct01m_c1.h5'
+  # how many subprocesses to use for data loading
+  num_workers: 8
+  # data transformations/augmentations
+  transformer:
+    train:
+      raw:
+        - name: Normalize
+        - name: RandomFlip
+        - name: RandomRotate90
+        - name: RandomRotate
+          # rotate only in ZY only
+          axes: [[2, 1]]
+          angle_spectrum: 15
+          mode: reflect
+        - name: RandomContrast
+        - name: ToTensor
+          expand_dims: true
+      label:
+        - name: RandomFlip
+        - name: RandomRotate90
+        - name: RandomRotate
+          # rotate only in ZY only
+          axes: [[2, 1]]
+          angle_spectrum: 15
+          mode: reflect
+        - name: ToTensor
+          expand_dims: false
+          dtype: 'uint8'
+      weight:
+        - name: RandomFlip
+        - name: RandomRotate90
+        - name: RandomRotate
+          # rotate only in ZY only
+          axes: [[2, 1]]
+          angle_spectrum: 15
+          mode: reflect
+        - name: ToTensor
+          expand_dims: true
+          dtype: 'float32'
+    test:
+      raw:
+        - name: Normalize
+        - name: ToTensor
+          expand_dims: true
+      label:
+        - name: ToTensor
+          expand_dims: false
+          dtype: 'uint8'
+      weight:       
+        - name: ToTensor
+          expand_dims: true
+          dtype: 'float32'

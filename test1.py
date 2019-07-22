@@ -1,0 +1,1 @@
+flist = list(Path('/home/minjie/dataset/fingerprint/raw').rglob('*.bmp'))
