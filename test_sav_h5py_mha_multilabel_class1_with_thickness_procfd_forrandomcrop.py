@@ -25,12 +25,19 @@ from tools.loggers import call_logger
 
 
 logger = call_logger('../CTraw/gen_randcrop.log', 'GenData')
-fd_all = '../CTraw/19_ct'
-mask_h5 = '../CTraw/h5/h5_19'
-h5_fd  = '../data/h5_rsa'
+fd_all = '../CTraw/48_ct'
+mask_h5 = '../CTraw/h5/h5_48'
+h5_fd  = '../data/h5_rs48'
+
+
+#fd_all = '../CTraw/22_ct'
+#mask_h5 = '../CTraw/h5/h5_22'
+#h5_fd  = '../data/h5_rsa'
+
+
 
 debugim_fd  = '../data/debug_img'
-name_chs = ['V','A','PV']
+name_chs = ['A','V','PV']
 
 
 n_class = 2
@@ -38,7 +45,9 @@ w_class = [1.0, 0.2] #second term not used
 w_class_in_roi = [2.0, 2.0]
 
 
-df_pid = pd.read_csv('../CTraw/19_ct.csv',dtype={'patient':str,'value':int,'is_flip':int})
+df_pid = pd.read_csv('../CTraw/48ct_0830.csv',dtype={'patient':str,'value':int,'is_flip':int})
+#df_pid = pd.read_csv('../CTraw/22_ct.csv',dtype={'patient':str,'value':int,'is_flip':int})
+
 maskid =df_pid.set_index('patient').T.to_dict('int')['value']
 mask_flip =df_pid.set_index('patient').T.to_dict('int')['is_flip']
 
@@ -48,8 +57,8 @@ path_patient_ids = [x/'data' for x in sorted(list(Path(fd_all).glob('*'))) if x.
 logger.info(f'Start gen h5 file, total {len(path_patient_ids)} cases')
 
 Path(h5_fd).mkdir(parents=True,exist_ok = True)
-for patient_case in path_patient_ids:
-    
+
+for patient_case in path_patient_ids:    
     fn1 = Path(patient_case)/'A_1.mha'
     fn2 = Path(patient_case)/'PV_1.mha'
     dicom_fd = Path(patient_case)
@@ -88,9 +97,6 @@ for patient_case in path_patient_ids:
     labels1_dilate = binary_dilation(labels1,structure = np.ones((5,5,5))).astype(labels1.dtype)
     label_bw =measure.label(labels1_dilate, connectivity=labels1_dilate.ndim)
     
-
-
-
     props_labelbw = measure.regionprops(label_bw)
     
     area_labelbw = [prop.area for prop in props_labelbw]
@@ -100,16 +106,12 @@ for patient_case in path_patient_ids:
         max_id = np.argmax(np.array(area_labelbw))+1
         
         #labels1 = (labels1==max_id).astype('int64')
-        labels1[label_bw!=max_id] = 0
-#        for idx,area in enumerate(area_labelbw):
-#            if area<5:
-#                labels1[label_bw==idx+1] = 0
-#        
-    #bwlabel skel, delete branch points
-    
-
-    
-    
+        #labels1[label_bw!=max_id] = 0
+        for idx,area in enumerate(area_labelbw):
+            if area<5:
+                labels1[label_bw==idx+1] = 0
+        
+    #bwlabel skel, delete branch points    
     
 #    itkimage1 = sitk.ReadImage(str(fn1))
 #    if mask_flip[p_id]==0:
@@ -160,53 +162,78 @@ for patient_case in path_patient_ids:
     xyz = [x_min,x_max,y_min,y_max,z_min,z_max, labels.shape[2],labels.shape[1],labels.shape[0]]
 
 
-
-
-
     #%% read dicom files
-    raw_im = np.zeros((3,n_slice,row,col),dtype = 'float32')
+    raw_im = -np.ones((3,n_slice,row,col),dtype = 'float32')
     for idx,fn in enumerate(flist):
+        
+        
+        fname = Path(fn).stem
+        idx = int(Path(fn).stem.replace('IM',''))
         
         with pydicom.dcmread(fn) as dc:
             img_dicom1 = (dc.pixel_array).copy()
             assert dc.PhotometricInterpretation =='MONOCHROME2', 'check PhotometricInterpretation'
             if idx ==0:
                 logger.info(f'mode 0 xyz pixelspacing = {dc.PixelSpacing}, {dc.SliceThickness}')
+                xy_ps = float(dc.PixelSpacing[0])
+                z_ps  = float(dc.SliceThickness)
+                
+                logger.info(f'A: RescaleSlope  = {dc.RescaleSlope}, RescaleIntercept = {dc.RescaleIntercept}, WindowCenter = {dc.WindowCenter}, WindowWidth = {dc.WindowWidth}')    
             
-    
+            
+            rs = int(dc.RescaleSlope)
+            ri = int(dc.RescaleIntercept)
+            wc = 80#int(dc.WindowCenter)
+            wh = 240#int(dc.WindowWidth)
+            img_dicom1 = rs * img_dicom1 + ri
+            img_dicom1 =  (img_dicom1.astype('float') - (wc - wh/2.0))/wh
+            #img_dicom = (img_dicom/2500.0).astype('float32')
+            #raw_im = np.clip(raw_im,0.0,1.0)-0.5               
+            raw_im[0,idx,:,:] = 2*(np.clip(img_dicom1,0.0,3.0)-0.5)  #(-1,?)
+ 
+                    
         
         fn2 = fn.replace('/'+name_chs[0] + '/','/'+name_chs[1] + '/')
-        fn3 = fn.replace('/'+name_chs[0] + '/','/'+name_chs[2] + '/')
-        
-        with pydicom.dcmread(fn2) as dc:
-            img_dicom2 = (dc.pixel_array).copy()
-            if idx ==0:
-                logger.info(f'mode 1 xyz pixelspacing = {dc.PixelSpacing}, {dc.SliceThickness}')
-        with pydicom.dcmread(fn3) as dc:
-            img_dicom3 = (dc.pixel_array).copy()
-            if idx ==0:
-                logger.info(f'mode 2 xyz pixelspacing = {dc.PixelSpacing}, {dc.SliceThickness}')
+        if osp.exists(str(fn2)):
+            with pydicom.dcmread(fn2) as dc:
+                img_dicom2 = (dc.pixel_array).copy()
+                if idx ==0:
+                    logger.info(f'mode 1 xyz pixelspacing = {dc.PixelSpacing}, {dc.SliceThickness}')
+                    
+                    logger.info(f'V: RescaleSlope  = {dc.RescaleSlope}, RescaleIntercept = {dc.RescaleIntercept}, WindowCenter = {dc.WindowCenter}, WindowWidth = {dc.WindowWidth}')    
+            
+            rs = int(dc.RescaleSlope)
+            ri = int(dc.RescaleIntercept)
+            wc = 80#int(dc.WindowCenter)
+            wh = 240#int(dc.WindowWidth)
+            img_dicom2 = rs * img_dicom2 + ri
+            img_dicom2 =  (img_dicom2.astype('float') - (wc - wh/2.0))/wh
+            #img_dicom = (img_dicom/2500.0).astype('float32')
+            #raw_im = np.clip(raw_im,0.0,1.0)-0.5               
+            raw_im[1,idx,:,:] = 2*(np.clip(img_dicom2,0.0,3.0)-0.5)  #(-1,?)
             
             
-        fname = Path(fn).stem
-        idx = int(Path(fn).stem.replace('IM',''))
-        
-       
-        
-        raw_im[0,idx,:,:] = img_dicom1
-        raw_im[1,idx,:,:] = img_dicom2
-        raw_im[2,idx,:,:] = img_dicom3
-        
-        
-    rs = int(dc.RescaleSlope)
-    ri = int(dc.RescaleIntercept)
-    wc = 80#int(dc.WindowCenter)
-    wh = 240#int(dc.WindowWidth)
-    raw_im = rs * raw_im + ri
-    raw_im =  (raw_im.astype('float') - (wc - wh/2.0))/wh
-    #img_dicom = (img_dicom/2500.0).astype('float32')
-    raw_im = np.clip(raw_im,0.0,1.0)-0.5               
- 
+        fn3 = fn.replace('/'+name_chs[0] + '/','/'+name_chs[2] + '/')                
+        if osp.exists(str(fn3)):
+            with pydicom.dcmread(fn3) as dc:
+                img_dicom3 = (dc.pixel_array).copy()
+                if idx ==0:
+                    logger.info(f'mode 2 xyz pixelspacing = {dc.PixelSpacing}, {dc.SliceThickness}')
+            
+                    logger.info(f'PV: RescaleSlope  = {dc.RescaleSlope}, RescaleIntercept = {dc.RescaleIntercept}, WindowCenter = {dc.WindowCenter}, WindowWidth = {dc.WindowWidth}')    
+            
+            rs = int(dc.RescaleSlope)
+            ri = int(dc.RescaleIntercept)
+            wc = 80#int(dc.WindowCenter)
+            wh = 240#int(dc.WindowWidth)
+            img_dicom3 = rs * img_dicom3 + ri
+            img_dicom3 =  (img_dicom3.astype('float') - (wc - wh/2.0))/wh
+            #img_dicom = (img_dicom/2500.0).astype('float32')
+            #raw_im = np.clip(raw_im,0.0,1.0)-0.5               
+            raw_im[2,idx,:,:] = 2*(np.clip(img_dicom3,0.0,3.0)-0.5)  #(-1,?)
+            
+
+    
     
     labels = labels[z_min:z_max+1,y_min:y_max+1,x_min:x_max+1]
     labels_dilate = labels_dilate[z_min:z_max+1,y_min:y_max+1,x_min:x_max+1]    
@@ -223,7 +250,7 @@ for patient_case in path_patient_ids:
     img_yxz  = np.transpose(raw_im,(2,3,1,0))
     
     for chs in range(n_slice):
-        imgs = (255*(img_yxz[:,:,chs,:] + 0.5)).astype('uint8')
+        imgs = np.clip((255*(img_yxz[:,:,chs,:] + 1.0)/2.0),0.0,255.0).astype('uint8')
         masks = (255*anno_yxz[:,:,chs]).astype('uint8')
         fd_sav = Path(debugim_fd)/p_id
         os.makedirs(str(fd_sav),exist_ok = True)
@@ -275,13 +302,10 @@ for patient_case in path_patient_ids:
     
     
     
-    dt_anno = ndimage.distance_transform_edt(anno_yxz, sampling=[1.0,1.0,1.777])
+    dt_anno = ndimage.distance_transform_edt(anno_yxz, sampling=[xy_ps,xy_ps,z_ps])
     
     #max_at_anno = ndimage.filters.maximum_filter(dt_anno, size=(3,3,3))
     #b_local_max = (dt_anno==max_at_anno).astype('int')
-    
-    
-    
     
     skel_label = skel-skel_branch
     skel_label_bw =measure.label(skel_label, connectivity=anno_yxz.ndim)
@@ -321,7 +345,7 @@ for patient_case in path_patient_ids:
     #d1 = ndimage.distance_transform_edt(a)
     #d2 = ndimage.distance_transform_edt(a, sampling=[2,1])
     #%%
-    dt_anno_to_skel,dt_anno_to_idx = ndimage.distance_transform_edt(1.0- skel_label, sampling=[1.0,1.0,1.777],return_indices=True)
+    dt_anno_to_skel,dt_anno_to_idx = ndimage.distance_transform_edt(1.0- skel_label, sampling=[xy_ps,xy_ps,z_ps],return_indices=True)
     
     
     anno_yxz_label = np.zeros_like(anno_yxz)
@@ -354,7 +378,7 @@ for patient_case in path_patient_ids:
         m_ch3  = props_pixel_ch3[idx].mean_intensity
         m_thick = prop_np_valid[idx][0]
         n_area_skel =  prop_np_valid[idx][3]
-        w_gain  = max(2.0,100.0/ pow(m_thick,2))
+        w_gain  = min(50.0,max(2.0,50.0/ pow(m_thick,2)))
         prop_img[idx] = np.array([n_area_skel,n_area,m_thick,m_ch1,m_ch2,m_ch3,w_gain])
         
     

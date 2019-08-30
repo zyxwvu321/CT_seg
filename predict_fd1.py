@@ -195,7 +195,7 @@ if __name__ == '__main__':
     logger = call_logger(log_file = str(model_fd/'test_log.txt'),log_name = 'UNetPredict')
     
     # Create the model
-    model = get_model(config)
+    model = get_model(config,is_test = True)
 
     if 'output_path' in config.keys():
         out_path = config['output_path']

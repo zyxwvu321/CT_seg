@@ -16,7 +16,7 @@ model:
   strides:         [1,2,1,1]
   use_SE:          [false,true,true,true]
   SE_reduction:    [4,8,8,8]
-  use_deconv:      true
+  use_deconv:      false
   
   # apply element-wise nn.Sigmoid after the final 1x1 convolution, otherwise apply nn.Softmax
   final_sigmoid: true
@@ -31,7 +31,7 @@ model:
 # trainer configuration
 trainer:
   # path to the checkpoint directory  
-  checkpoint_dir: 3dunet_pwtvfl1_3dseres_c1b2_fd_rs_upad
+  checkpoint_dir: 3dunet_tvfl1_3dseres_c1b2_fd_rs_upad_upsamp
   # path to latest checkpoint; if provided the training will be resumed from that checkpoint
   resume: null
   # how many iterations between validations
@@ -127,9 +127,7 @@ loaders:
   raw_internal_path: raw
   # path to the the label data withtin the H5
   label_internal_path: label  
-  
-  # path to the the weight data withtin the H5
-  weight_internal_path: weight
+
   # skel points index
   skel_internal_path: skelpt
   # random sampling params
@@ -141,12 +139,12 @@ loaders:
   # path to the the weight data withtin the H5
   train_path:
     #- 'resources/ct01m_c1.h5'
-    - '../data/h5_rs'
+    - 'data/h5_rs'
     #- 'data/h5_rs/p_34.h5'
   # paths to the validation datasets
   val_path:
     #- 'resources/ct01m_c1.h5'
-    - '../data/h5_rs'
+    - 'data/h5_rs'
     #- 'data/h5_rs/p_34.h5'
   # how many subprocesses to use for data loading
   num_workers: 0
@@ -178,17 +176,7 @@ loaders:
         - name: ToTensor
           expand_dims: false
           dtype: 'uint8'
-      weight:
-        - name: RandomFlip
-        - name: RandomRotate90
-        - name: RandomRotate
-          # rotate only in ZY only
-          axes: [[2, 1]]
-          angle_spectrum: 15
-          mode: reflect
-        - name: ToTensor
-          expand_dims: true
-          dtype: 'float32'
+
     test:
       raw:
         - name: Normalize
@@ -198,8 +186,4 @@ loaders:
         - name: ToTensor
           expand_dims: false
           dtype: 'uint8'
-      weight:       
-        - name: ToTensor
-          expand_dims: true
-          dtype: 'float32'
 

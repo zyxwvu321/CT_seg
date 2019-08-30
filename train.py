@@ -13,6 +13,9 @@ from unet3d.trainer import UNet3DTrainer
 #from unet3d.utils import get_logger
 from tools.loggers import call_logger
 from unet3d.utils import get_number_of_learnable_parameters,set_seed
+
+#from unet3d.lr_scheduler import WarmupMultiStepLR
+
 from pathlib import Path
 import os 
  
@@ -81,7 +84,10 @@ def _create_lr_scheduler(config, optimizer):
         return ReduceLROnPlateau(optimizer, mode='max', factor=0.5, patience=20, verbose=True)
     else:
         class_name = lr_config.pop('name')
-        m = importlib.import_module('torch.optim.lr_scheduler')
+        if class_name =='WarmupMultiStepLR':
+            m = importlib.import_module('unet3d.lr_scheduler')
+        else:
+            m = importlib.import_module('torch.optim.lr_scheduler')
         clazz = getattr(m, class_name)
         # add optimizer to the config
         lr_config['optimizer'] = optimizer
